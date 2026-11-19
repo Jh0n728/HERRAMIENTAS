@@ -79,7 +79,18 @@ def procesar_kardex_lote(df, usuario="", password="", tipo_documento="deposito",
     total = len(df)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        # Argumentos esenciales para evitar cierre por memoria limitada en Streamlit Cloud
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-zygote",
+                "--single-process",
+            ],
+        )
         if os.path.exists(ARCHIVO_SESION):
             context = browser.new_context(storage_state=ARCHIVO_SESION)
         else:
@@ -88,7 +99,7 @@ def procesar_kardex_lote(df, usuario="", password="", tipo_documento="deposito",
         page = context.new_page()
 
         try:
-            page.goto("https://academico.upedagogica.edu.bo/participantes", wait_until="networkidle")
+            page.goto("https://academico.upedagogica.edu.bo/participantes", wait_until="domcontentloaded", timeout=60000)
 
             necesita_login = "login" in page.url.lower() or page.locator("input[type='password']").count() > 0
             if necesita_login:
@@ -105,7 +116,7 @@ def procesar_kardex_lote(df, usuario="", password="", tipo_documento="deposito",
                 campo_user.fill(usuario)
                 campo_pass.fill(password)
                 page.locator("button[type='submit'], input[type='submit']").first.click()
-                page.wait_for_load_state("networkidle")
+                page.wait_for_load_state("domcontentloaded")
 
                 if "login" in page.url.lower() or page.locator("input[type='password']").count() > 0:
                     return None, pd.DataFrame(), "❌ Usuario o contraseña incorrectos."
@@ -121,7 +132,8 @@ def procesar_kardex_lote(df, usuario="", password="", tipo_documento="deposito",
                     on_progress(idx + 1, total, f"Procesando ({idx + 1}/{total}): Carnet **{carnet}**")
 
                 url_busqueda = f"https://academico.upedagogica.edu.bo/participantes?carnet={carnet}&nombre=&paterno=&materno="
-                page.goto(url_busqueda, wait_until="networkidle")
+                page.goto(url_busqueda, wait_until="domcontentloaded", timeout=60000)
+                page.wait_for_selector("table.table-striped tbody tr, .table-responsive", timeout=15000)
 
                 filas = page.locator("table.table-striped tbody tr")
                 cantidad_filas = filas.count()
