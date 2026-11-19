@@ -1,0 +1,12 @@
+# Ignorar sesiones privadas y cookies (MUY IMPORTANTE)
+sesion_academico.json
+brave_session_kardex/
+
+# Ignorar archivos temporales de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignorar entornos virtuales si existieran
+venv/
+.venv/
