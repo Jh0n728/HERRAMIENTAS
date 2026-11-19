@@ -10,18 +10,17 @@ import pandas as pd
 from playwright.sync_api import sync_playwright
 from pypdf import PdfWriter
 
-if platform.system() == "Linux":
-    try:
-        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
-    except Exception:
-        pass
-
 ARCHIVO_SESION = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sesion_academico.json")
 
 RUTAS_REPORTE = {
     "deposito": "/reportes/deposito/",
     "historial": "/reportes/historial/",
 }
+
+
+def asegurar_chromium():
+    if platform.system() == "Linux":
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
 
 
 def normalizar_texto(texto):
@@ -73,13 +72,14 @@ def procesar_kardex_lote(df, usuario="", password="", tipo_documento="deposito",
     Busca por CARNET + nombre de PROGRAMA + PAF APROBADO.
     tipo_documento: 'deposito' (Kárdex de pagos) o 'historial' (Historial Académico).
     """
+    asegurar_chromium()
     ruta_objetivo = RUTAS_REPORTE.get(tipo_documento, "/reportes/deposito/")
     merger = PdfWriter()
     resultados_log = []
     total = len(df)
 
     with sync_playwright() as p:
-        # Argumentos esenciales para evitar cierre por memoria limitada en Streamlit Cloud
+        # Sin --single-process (causa crash en Chromium moderno)
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -87,14 +87,21 @@ def procesar_kardex_lote(df, usuario="", password="", tipo_documento="deposito",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
-                "--no-zygote",
-                "--single-process",
+                "--disable-extensions",
             ],
         )
         if os.path.exists(ARCHIVO_SESION):
             context = browser.new_context(storage_state=ARCHIVO_SESION)
         else:
             context = browser.new_context()
+
+        # Bloquear imágenes, fuentes y hojas de estilo para ahorrar 90% de RAM y acelerar carga
+        context.route(
+            "**/*",
+            lambda route: route.abort()
+            if route.request.resource_type in {"image", "stylesheet", "font", "media"}
+            else route.continue_(),
+        )
 
         page = context.new_page()
 
@@ -133,7 +140,7 @@ def procesar_kardex_lote(df, usuario="", password="", tipo_documento="deposito",
 
                 url_busqueda = f"https://academico.upedagogica.edu.bo/participantes?carnet={carnet}&nombre=&paterno=&materno="
                 page.goto(url_busqueda, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_selector("table.table-striped tbody tr, .table-responsive", timeout=15000)
+                page.wait_for_selector("table.table-striped, .table-responsive", timeout=15000)
 
                 filas = page.locator("table.table-striped tbody tr")
                 cantidad_filas = filas.count()
